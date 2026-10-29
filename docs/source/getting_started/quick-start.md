@@ -12,13 +12,14 @@ Serving-framework users can then connect SGLang, vLLM or other systems.
 ## Prerequisites
 
 - **Python**: 3.10 or later; a virtual environment is recommended.
-- **RDMA**: an RDMA driver and SDK (for example, Mellanox OFED), if you plan to use RDMA for data transfer.
+- **RDMA**: an RDMA driver and SDK (for example, Mellanox OFED), if you plan to use RDMA for data transfer. On ScaleFabric SHCA systems, install `shca-tools` and build with `-DUSE_SHCA=ON`.
 - **CUDA**: 12.1 or later. For most CUDA-enabled use cases, such as RDMA-based KV cache transfer between GPUs or between GPU and DRAM, NVIDIA GPUDirect support is also required. You may install CUDA from [the NVIDIA downloads page](https://developer.nvidia.com/cuda-downloads).
 
 ```{note}
 The default pip, build and Docker paths target NVIDIA CUDA. For other
 platforms, see [Other Platforms](#other-platforms) below.
 ```
+
 
 ## Installation
 
@@ -73,7 +74,7 @@ For CUDA, VRAM segments, NVMe-oF, and other backend flags, see the
 
 :::{tab-item} Docker
 Published images are available on Docker Hub at
-[kvcacheai/mooncake](https://hub.docker.com/r/kvcacheai/mooncake).
+[kvcacheai/mooncake](https://hub.docker.com/r/kvcacheai/mooncake):
 
 ```bash
 docker run --net=host \
@@ -82,6 +83,17 @@ docker run --net=host \
     kvcacheai/mooncake:latest \
     mooncake_master
 ```
+
+The multi-architecture image publishes these CUDA flavor tags:
+
+| Tag | CUDA | Notes |
+| --- | --- | --- |
+| `latest` | 13 | Default flavor |
+| `0.3.14` | 13 | Default flavor for this version |
+| `0.3.14-cuda12` | 12 | Fixed release, recommended for production |
+| `0.3.14-cuda13` | 13 | Fixed release, recommended for production |
+| `cuda12` | 12 | Floating alias for the newest CUDA 12 image |
+| `cuda13` | 13 | Floating alias for the newest CUDA 13 image |
 
 For details, see
 [Use Mooncake in Docker Containers](build.md#use-mooncake-in-docker-containers).
@@ -155,6 +167,46 @@ and
 ```bash
 pip install mooncake-transfer-engine-rocm
 ```
+:::
+
+:::{tab-item} Intel XPU
+**Prerequisites**
+
+- Python 3.10 or later; XPU-enabled PyTorch for tensor APIs.
+- An Intel GPU with a compatible driver and Level Zero runtime.
+- Intel oneAPI DPC++ compiler (`icpx`) and SYCL runtime. Source
+  `/opt/intel/oneapi/setvars.sh` before building and running Mooncake.
+
+**Installation**
+
+Build from source with XPU support enabled rather than using the default
+CUDA or non-CUDA wheel:
+
+```bash
+git clone https://github.com/kvcache-ai/Mooncake.git
+cd Mooncake
+sudo bash dependencies.sh
+source /opt/intel/oneapi/setvars.sh
+python -m pip install . \
+  -Ccmake.define.CMAKE_C_COMPILER=icx \
+  -Ccmake.define.CMAKE_CXX_COMPILER=icpx \
+  -Ccmake.define.USE_TENT=ON \
+  -Ccmake.define.USE_XPU=ON \
+  -Ccmake.define.USE_CUDA=OFF
+
+export ONEAPI_DEVICE_SELECTOR=level_zero:gpu
+export MC_USE_TENT=1
+```
+
+XPU requires TENT; the classic Transfer Engine has no XPU support. Use `tcp`
+or `rdma` for Store setup. With `rdma`, XPU memory uses dma-buf RDMA when
+available and is otherwise staged through host memory. XPUs on the same node
+copy directly only when the devices have peer access; across processes, this
+also needs same-node IPC (same PID namespace, and Yama `ptrace_scope` 0 or 1,
+or `CAP_SYS_PTRACE` for scope 2). Otherwise the copy goes through host memory
+or the network path.
+See {ref}`build-with-intel-xpu` and
+{ref}`Intel XPU Transport <intel-xpu-transport>` for details and limitations.
 :::
 
 :::{tab-item} Moore Threads MUSA
@@ -268,6 +320,26 @@ cd Mooncake
 sudo bash dependencies.sh
 mkdir build && cd build
 cmake .. -DUSE_COREX=ON
+make -j
+sudo make install
+```
+:::
+
+:::{tab-item} Biren GPU
+**Prerequisites**
+
+- Python 3.10 or later.
+- Biren SUPA SDK. Set `BIREN_HOME` to the SDK root containing `supa/include`
+  and `supa/lib`, or use the default `/usr/local/birensupa/all/latest`.
+
+**Installation**
+
+```bash
+git clone https://github.com/kvcache-ai/Mooncake.git
+cd Mooncake
+sudo bash dependencies.sh
+mkdir build && cd build
+cmake .. -DUSE_SUPA=ON -DBIREN_HOME=/usr/local/birensupa/all/latest
 make -j
 sudo make install
 ```
